@@ -1,4 +1,4 @@
-import os
+﻿import os
 from datetime import timedelta
 
 
@@ -30,6 +30,9 @@ class Config:
     ADMIN_BOOTSTRAP_ENABLED = os.getenv("ADMIN_BOOTSTRAP_ENABLED", "false").lower() == "true"
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin@megahotel.local")
     ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
+    ADMIN_PASSWORD_RESET_ENABLED = (
+        os.getenv("ADMIN_PASSWORD_RESET_ENABLED", "false").lower() == "true"
+    )
 
     # Business defaults
     DEFAULT_DELIVERY_FEE = os.getenv("DEFAULT_DELIVERY_FEE", "50.00")
@@ -48,3 +51,4 @@ class Config:
     CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
     CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
     CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "mega_hotel")
+

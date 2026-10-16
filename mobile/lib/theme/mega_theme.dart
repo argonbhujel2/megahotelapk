@@ -6,14 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 /// Background: Warm cream
 /// Accent: Restrained gold
 class MegaTheme {
-  static const Color forestGreen = Color(0xFF1B5E3B);
-  static const Color forestGreenLight = Color(0xFF2E7D4F);
-  static const Color cream = Color(0xFFF8F4EC);
-  static const Color creamDark = Color(0xFFEFE8DA);
+  static const Color forestGreen = Color(0xFF8B1E24);
+  static const Color forestGreenLight = Color(0xFFB52B32);
+  static const Color cream = Color(0xFFFFF8EC);
+  static const Color creamDark = Color(0xFFF1E4D0);
   static const Color gold = Color(0xFFC9A227);
   static const Color goldSoft = Color(0xFFE8D48B);
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF5C5C5C);
+  static const Color textPrimary = Color(0xFF241719);
+  static const Color textSecondary = Color(0xFF6D5B5B);
   static const Color error = Color(0xFFB3261E);
   static const Color success = Color(0xFF1B7A3D);
 
@@ -33,7 +33,7 @@ class MegaTheme {
       ),
       scaffoldBackgroundColor: cream,
       appBarTheme: AppBarTheme(
-        backgroundColor: forestGreen,
+        backgroundColor: gold,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -45,7 +45,7 @@ class MegaTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: forestGreen,
+          backgroundColor: gold,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -83,4 +83,5 @@ class MegaTheme {
     return base;
   }
 }
+
 

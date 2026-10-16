@@ -1,4 +1,4 @@
-"""Authentication endpoints — shared login for all roles."""
+﻿"""Authentication endpoints â€” shared login for all roles."""
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import (
     create_access_token, create_refresh_token, jwt_required,
@@ -29,8 +29,22 @@ def login():
         return jsonify({"success": False, "error": "validation", "message": "Email and password required"}), 400
 
     user = User.query.filter_by(email=email, is_active=True).first()
-    if not user or not user.password_hash or not check_password_hash(user.password_hash, password):
-        return jsonify({"success": False, "error": "invalid_credentials", "message": "Invalid email or password"}), 401
+
+    password_valid = False
+    if user and user.password_hash:
+        try:
+            password_valid = check_password_hash(user.password_hash, password)
+        except (ValueError, TypeError):
+            current_app.logger.warning(
+                "Login rejected because the stored password hash is invalid."
+            )
+
+    if not password_valid:
+        return jsonify({
+            "success": False,
+            "error": "invalid_credentials",
+            "message": "Invalid email or password",
+        }), 401
 
     user.last_login_at = datetime.utcnow()
     access = create_access_token(identity=user.id, additional_claims={"role": user.role})
@@ -57,7 +71,7 @@ def login():
 
 @bp.route("/guest", methods=["POST"])
 def guest_entry():
-    """Continue as Guest — no account created."""
+    """Continue as Guest â€” no account created."""
     return jsonify({
         "success": True,
         "guest": True,
@@ -103,3 +117,4 @@ def password_reset_request():
         "success": True,
         "message": "If an account exists for that email, a reset link has been sent.",
     })
+

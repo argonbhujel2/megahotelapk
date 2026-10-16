@@ -66,3 +66,8 @@ test-results/
 
 # Local Android backup files
 mobile/android_backup/
+
+# Android release signing secrets
+mobile/android/key.properties
+mobile/android/app/*.jks
+mobile/android/app/*.keystore

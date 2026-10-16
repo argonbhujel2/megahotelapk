@@ -19,6 +19,29 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   String? _error;
 
+  void _showComingSoon(String provider) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.info_outline, size: 42),
+        title: Text('$provider Login'),
+        content: const Text(
+          'Sorry from Mega Hotel and BAM Studio.\n\n'
+          'This service will be available in the next update, '
+          'version 1.0.1.1.\n\n'
+          'Current version: 1.0.1.0',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _login() async {
     setState(() {
       _loading = true;
@@ -106,7 +129,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Sign In'),
               ),
@@ -117,16 +141,33 @@ class _LoginScreenState extends State<LoginScreen> {
                   foregroundColor: MegaTheme.forestGreen,
                   side: const BorderSide(color: MegaTheme.forestGreen),
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Text('Continue as Guest'),
               ),
               const SizedBox(height: 24),
-              // OAuth buttons — require real provider configuration
-              Text(
-                'Google & Facebook sign-in require provider credentials to be configured on the server.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+              const Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('OR CONTINUE WITH'),
+                  ),
+                  Expanded(child: Divider()),
+                ],
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => _showComingSoon('Google'),
+                icon: const Icon(Icons.g_mobiledata, size: 28),
+                label: const Text('Continue with Google'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _showComingSoon('Facebook'),
+                icon: const Icon(Icons.facebook, size: 24),
+                label: const Text('Continue with Facebook'),
               ),
               const SizedBox(height: 40),
               TextButton(

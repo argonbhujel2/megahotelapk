@@ -1,6 +1,7 @@
 """Critical path tests — authentication and order creation rules."""
 import pytest
 from app import create_app
+from app.config import Config
 from app.extensions import db
 from app.models.user import User
 from app.models.delivery import DeliveryIdentitySlot
@@ -9,13 +10,17 @@ from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update({
-        "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        "ADMIN_BOOTSTRAP_ENABLED": False,
-        "JWT_SECRET_KEY": "test-secret",
-    })
+    class TestConfig(Config):
+        TESTING = True
+        SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "pool_pre_ping": True,
+            "connect_args": {},
+        }
+        ADMIN_BOOTSTRAP_ENABLED = False
+        JWT_SECRET_KEY = "test-secret"
+
+    app = create_app(TestConfig)
     with app.app_context():
         db.create_all()
         # Seed two delivery slots
