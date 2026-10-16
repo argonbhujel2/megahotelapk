@@ -1,0 +1,390 @@
+﻿"""Authentication endpoints — shared login plus email OTP flows."""
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import (
+    create_access_token, create_refresh_token, jwt_required,
+    get_jwt_identity,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+import hashlib
+import hmac
+import os
+import re
+import secrets
+import smtplib
+import ssl
+import uuid
+
+from sqlalchemy.exc import IntegrityError
+from app.extensions import db
+from app.models.user import User, Session, AuthOtpChallenge
+
+bp = Blueprint("auth", __name__)
+
+OTP_LIFETIME_MINUTES = 10
+OTP_RESEND_SECONDS = 60
+OTP_MAX_ATTEMPTS = 5
+MIN_PASSWORD_LENGTH = 8
+
+
+def _normal_email(value):
+    return (value or "").strip().lower()
+
+
+def _otp_digest(challenge_id, code):
+    secret = current_app.config.get("SECRET_KEY", "")
+    if not secret or secret == "dev-only-change-me":
+        raise RuntimeError("Configure a strong SECRET_KEY before enabling email OTP.")
+    message = f"{challenge_id}:{code}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _send_otp_email(email, code, purpose):
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    sender = os.getenv("SMTP_FROM_EMAIL", username)
+    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+
+    if not username or not password or not sender:
+        raise RuntimeError("SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL must be configured.")
+
+    if purpose == "registration":
+        subject = "Verify your Mega Hotel account"
+        intro = "Use this code to verify your email and finish creating your account."
+    else:
+        subject = "Your Mega Hotel password reset code"
+        intro = "Use this code to reset your Mega Hotel password."
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = email
+    msg.set_content(
+        f"{intro}\n\nYour verification code is: {code}\n\n"
+        f"This code expires in {OTP_LIFETIME_MINUTES} minutes. "
+        "Do not share this code with anyone. If you did not request it, ignore this email."
+    )
+
+    context = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, context=context, timeout=15) as server:
+            server.login(username, password)
+            server.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as server:
+            server.ehlo()
+            if use_tls:
+                server.starttls(context=context)
+                server.ehlo()
+            server.login(username, password)
+            server.send_message(msg)
+
+
+def _new_challenge(email, purpose, full_name=None, password_hash=None, existing=None):
+    now = datetime.utcnow()
+    challenge = existing or AuthOtpChallenge(
+        id=str(uuid.uuid4()),
+        email=email,
+        purpose=purpose,
+    )
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    challenge.otp_hash = _otp_digest(challenge.id, code)
+    challenge.full_name = full_name
+    challenge.password_hash = password_hash
+    challenge.expires_at = now + timedelta(minutes=OTP_LIFETIME_MINUTES)
+    challenge.last_sent_at = now
+    challenge.attempts = 0
+    challenge.consumed_at = None
+    if existing is None:
+        db.session.add(challenge)
+    return challenge, code
+
+
+def _latest_challenge(email, purpose):
+    return (
+        AuthOtpChallenge.query
+        .filter_by(email=email, purpose=purpose, consumed_at=None)
+        .order_by(AuthOtpChallenge.created_at.desc())
+        .first()
+    )
+
+
+def _check_otp(challenge, code):
+    now = datetime.utcnow()
+    if challenge.consumed_at is not None:
+        return False, "This code has already been used."
+    if challenge.expires_at <= now:
+        return False, "This code has expired. Request a new code."
+    if challenge.attempts >= OTP_MAX_ATTEMPTS:
+        return False, "Too many attempts. Request a new code."
+
+    expected = _otp_digest(challenge.id, code)
+    if not hmac.compare_digest(challenge.otp_hash, expected):
+        challenge.attempts += 1
+        db.session.commit()
+        remaining = max(0, OTP_MAX_ATTEMPTS - challenge.attempts)
+        return False, f"Invalid code. Attempts remaining: {remaining}."
+    return True, None
+
+
+def _send_or_rollback(challenge, code, email, purpose, created):
+    try:
+        _send_otp_email(email, code, purpose)
+    except Exception:
+        current_app.logger.exception("Could not send authentication OTP.")
+        if created:
+            db.session.delete(challenge)
+        else:
+            challenge.consumed_at = datetime.utcnow()
+        db.session.commit()
+        return False
+    return True
+
+
+@bp.route("/register", methods=["POST"])
+def register():
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    full_name = (data.get("full_name") or data.get("name") or "").strip()
+    password = data.get("password") or ""
+
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return jsonify({"success": False, "message": "Enter a valid email address."}), 400
+    if not full_name or len(full_name) > 150:
+        return jsonify({"success": False, "message": "Enter your name (up to 150 characters)."}), 400
+    if not isinstance(password, str) or len(password) < MIN_PASSWORD_LENGTH:
+        return jsonify({"success": False, "message": "Password must be at least 8 characters."}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({"success": False, "message": "An account with this email already exists. Try logging in or resetting your password."}), 409
+
+    existing = _latest_challenge(email, "registration")
+    now = datetime.utcnow()
+    if existing and existing.last_sent_at > now - timedelta(seconds=OTP_RESEND_SECONDS):
+        return jsonify({"success": False, "message": "Please wait 60 seconds before requesting another code."}), 429
+
+    challenge, code = _new_challenge(
+        email, "registration", full_name,
+        generate_password_hash(password), existing
+    )
+    db.session.commit()
+
+    if not _send_or_rollback(challenge, code, email, "registration", existing is None):
+        return jsonify({"success": False, "message": "Email could not be sent. Check server SMTP settings and try again."}), 503
+
+    return jsonify({
+        "success": True,
+        "message": "Verification code sent. Check your email.",
+        "expires_in_seconds": OTP_LIFETIME_MINUTES * 60,
+        "resend_after_seconds": OTP_RESEND_SECONDS,
+    }), 200
+
+
+@bp.route("/resend-registration-otp", methods=["POST"])
+def resend_registration_otp():
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    challenge = _latest_challenge(email, "registration")
+
+    if not challenge or User.query.filter_by(email=email).first():
+        return jsonify({"success": False, "message": "Registration challenge not found. Please register again."}), 404
+
+    now = datetime.utcnow()
+    if challenge.last_sent_at > now - timedelta(seconds=OTP_RESEND_SECONDS):
+        return jsonify({"success": False, "message": "Please wait 60 seconds before requesting another code."}), 429
+
+    challenge, code = _new_challenge(
+        email, "registration", challenge.full_name,
+        challenge.password_hash, challenge
+    )
+    db.session.commit()
+
+    if not _send_or_rollback(challenge, code, email, "registration", False):
+        return jsonify({"success": False, "message": "Email could not be sent. Try again later."}), 503
+
+    return jsonify({"success": True, "message": "A new verification code was sent."})
+
+
+@bp.route("/verify-registration-otp", methods=["POST"])
+def verify_registration_otp():
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    code = str(data.get("otp") or data.get("code") or "").strip()
+
+    if not re.fullmatch(r"\d{6}", code):
+        return jsonify({"success": False, "message": "Enter the 6-digit code."}), 400
+
+    challenge = _latest_challenge(email, "registration")
+    if not challenge:
+        return jsonify({"success": False, "message": "Registration code not found. Please register again."}), 400
+
+    valid, error = _check_otp(challenge, code)
+    if not valid:
+        return jsonify({"success": False, "message": error}), 400
+
+    if User.query.filter_by(email=email).first():
+        challenge.consumed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({"success": False, "message": "An account with this email already exists."}), 409
+
+    user = User(
+        id=str(uuid.uuid4()),
+        email=email,
+        password_hash=challenge.password_hash,
+        full_name=challenge.full_name,
+        role="customer",
+        is_active=True,
+    )
+    challenge.consumed_at = datetime.utcnow()
+    db.session.add(user)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"success": False, "message": "An account with this email already exists."}), 409
+
+    return jsonify({
+        "success": True,
+        "message": "Email verified. You can now log in with your email and password.",
+        "user": user.to_dict(),
+    }), 201
+
+
+@bp.route("/login", methods=["POST"])
+def login():
+    """Shared login. Role is determined by the backend, never by the client."""
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"success": False, "error": "validation", "message": "Email and password required"}), 400
+
+    user = User.query.filter_by(email=email, is_active=True).first()
+    password_valid = False
+    if user and user.password_hash:
+        try:
+            password_valid = check_password_hash(user.password_hash, password)
+        except (ValueError, TypeError):
+            current_app.logger.warning("Login rejected because the stored password hash is invalid.")
+
+    if not password_valid:
+        return jsonify({"success": False, "error": "invalid_credentials", "message": "Invalid email or password"}), 401
+
+    user.last_login_at = datetime.utcnow()
+    access = create_access_token(identity=user.id, additional_claims={"role": user.role})
+    refresh_token = create_refresh_token(identity=user.id)
+
+    session = Session(
+        user_id=user.id,
+        refresh_token_jti=str(uuid.uuid4()),
+        user_agent=request.headers.get("User-Agent"),
+        ip_address=request.remote_addr,
+        expires_at=datetime.utcnow() + current_app.config["JWT_REFRESH_TOKEN_EXPIRES"],
+    )
+    db.session.add(session)
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "access_token": access,
+        "refresh_token": refresh_token,
+        "user": user.to_dict(),
+    })
+
+
+@bp.route("/guest", methods=["POST"])
+def guest_entry():
+    return jsonify({
+        "success": True,
+        "guest": True,
+        "message": "Guest session started. You can browse and place orders.",
+    })
+
+
+@bp.route("/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def refresh():
+    identity = get_jwt_identity()
+    user = db.session.get(User, identity)
+    if not user or not user.is_active:
+        return jsonify({"success": False, "error": "invalid_user"}), 401
+    access = create_access_token(identity=user.id, additional_claims={"role": user.role})
+    return jsonify({"success": True, "access_token": access})
+
+
+@bp.route("/logout", methods=["POST"])
+@jwt_required()
+def logout():
+    return jsonify({"success": True, "message": "Logged out"})
+
+
+@bp.route("/me", methods=["GET"])
+@jwt_required()
+def me():
+    user = db.session.get(User, get_jwt_identity())
+    if not user:
+        return jsonify({"success": False, "error": "not_found"}), 404
+    return jsonify({"success": True, "user": user.to_dict()})
+
+
+@bp.route("/password-reset-request", methods=["POST"])
+def password_reset_request():
+    """Always return a generic response to reduce account enumeration."""
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    generic = {
+        "success": True,
+        "message": "If an account exists for that email, a reset code has been sent.",
+    }
+
+    user = User.query.filter_by(email=email, is_active=True).first()
+    if not user:
+        return jsonify(generic), 200
+
+    challenge = _latest_challenge(email, "password_reset")
+    now = datetime.utcnow()
+    if challenge and challenge.last_sent_at > now - timedelta(seconds=OTP_RESEND_SECONDS):
+        return jsonify(generic), 200
+
+    challenge, code = _new_challenge(email, "password_reset", existing=challenge)
+    db.session.commit()
+
+    if not _send_or_rollback(challenge, code, email, "password_reset", challenge.created_at == challenge.last_sent_at):
+        # Keep the public response generic; the failure is recorded in server logs.
+        return jsonify(generic), 200
+    return jsonify(generic), 200
+
+
+@bp.route("/password-reset-confirm", methods=["POST"])
+def password_reset_confirm():
+    data = request.get_json(silent=True) or {}
+    email = _normal_email(data.get("email"))
+    code = str(data.get("otp") or data.get("code") or "").strip()
+    new_password = data.get("new_password") or ""
+
+    if not re.fullmatch(r"\d{6}", code):
+        return jsonify({"success": False, "message": "Enter the 6-digit code."}), 400
+    if not isinstance(new_password, str) or len(new_password) < MIN_PASSWORD_LENGTH:
+        return jsonify({"success": False, "message": "Password must be at least 8 characters."}), 400
+
+    challenge = _latest_challenge(email, "password_reset")
+    if not challenge:
+        return jsonify({"success": False, "message": "Invalid or expired reset code."}), 400
+
+    valid, error = _check_otp(challenge, code)
+    if not valid:
+        return jsonify({"success": False, "message": error}), 400
+
+    user = User.query.filter_by(email=email, is_active=True).first()
+    if not user:
+        challenge.consumed_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({"success": False, "message": "Invalid or expired reset code."}), 400
+
+    user.password_hash = generate_password_hash(new_password)
+    challenge.consumed_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"success": True, "message": "Password reset successfully. You can now log in."})

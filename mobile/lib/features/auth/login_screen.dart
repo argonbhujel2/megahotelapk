@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/mega_theme.dart';
 import '../../core/auth_state.dart';
 import '../../core/api_client.dart';
+import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 
 /// Shared login for Customer, Admin and Staff.
 /// No separate Admin login link. Role is determined by backend.
@@ -135,7 +137,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     : const Text('Sign In'),
               ),
               const SizedBox(height: 16),
-              OutlinedButton(
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const RegisterScreen(),
+                    ),
+                  );
+                },
+                child: const Text('New customer? Create account'),
+              ),
+              const SizedBox(height: 8),              OutlinedButton(
                 onPressed: _continueAsGuest,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: MegaTheme.forestGreen,
@@ -172,7 +184,11 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 40),
               TextButton(
                 onPressed: () {
-                  // Password recovery flow
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ForgotPasswordScreen(),
+                    ),
+                  );
                 },
                 child: const Text('Forgot password?'),
               ),
@@ -183,3 +199,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+
+

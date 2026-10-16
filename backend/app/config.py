@@ -1,5 +1,6 @@
 ﻿import os
 from datetime import timedelta
+from sqlalchemy.engine import URL
 
 
 class Config:
@@ -8,23 +9,37 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", 3600)))
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES", 2592000)))
 
-    # Database
-    # Prefer Turso when credentials present; otherwise local SQLite for development
+    # Database: prefer configured Turso credentials; otherwise use DATABASE_URL.
     TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
     TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///local.db")
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_pre_ping": True,
-        "connect_args": {},
-    }
+    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+        _turso_host = TURSO_DATABASE_URL.strip().rstrip("/")
+        if _turso_host.startswith("libsql://"):
+            _turso_host = _turso_host[len("libsql://"):]
+        elif _turso_host.startswith("https://"):
+            _turso_host = _turso_host[len("https://"):]
+        elif _turso_host.startswith("http://"):
+            _turso_host = _turso_host[len("http://"):]
 
-    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN and "libsql" in (DATABASE_URL or ""):
-        SQLALCHEMY_ENGINE_OPTIONS["connect_args"] = {
-            "auth_token": TURSO_AUTH_TOKEN,
+        SQLALCHEMY_DATABASE_URI = URL.create(
+            "sqlite+libsql_native",
+            host=_turso_host,
+            query={"secure": "true"},
+        )
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "pool_pre_ping": True,
+            "connect_args": {"auth_token": TURSO_AUTH_TOKEN},
         }
+    else:
+        SQLALCHEMY_DATABASE_URI = DATABASE_URL or "sqlite:///local.db"
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "pool_pre_ping": True,
+            "connect_args": {},
+        }
+
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Admin bootstrap
     ADMIN_BOOTSTRAP_ENABLED = os.getenv("ADMIN_BOOTSTRAP_ENABLED", "false").lower() == "true"

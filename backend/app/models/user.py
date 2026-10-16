@@ -89,3 +89,19 @@ class StaffPermission(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", back_populates="staff_permissions")
+
+class AuthOtpChallenge(db.Model):
+    """Short-lived, single-use email OTP challenge."""
+    __tablename__ = "auth_otp_challenges"
+
+    id = db.Column(db.String(36), primary_key=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    purpose = db.Column(db.String(30), nullable=False, index=True)
+    otp_hash = db.Column(db.String(64), nullable=False)
+    full_name = db.Column(db.String(150), nullable=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_sent_at = db.Column(db.DateTime, nullable=False)
+    attempts = db.Column(db.Integer, default=0, nullable=False)
+    consumed_at = db.Column(db.DateTime, nullable=True)

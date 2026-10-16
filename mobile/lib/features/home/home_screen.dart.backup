@@ -1,0 +1,574 @@
+﻿import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../theme/mega_theme.dart';
+import '../../core/auth_state.dart';
+import '../../core/api_client.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<dynamic> _foods = [];
+  List<dynamic> _banners = [];
+  final Map<String, Map<String, dynamic>> _cart = {};
+  bool _loading = true;
+  String? _error;
+
+  int get _cartCount => _cart.values.fold(
+        0,
+        (sum, item) => sum + (item['quantity'] as int),
+      );
+
+  double get _subtotal => _cart.values.fold(
+        0.0,
+        (sum, item) =>
+            sum +
+            (double.tryParse('${item['food']['base_price']}') ?? 0) *
+                (item['quantity'] as int),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final api = context.read<ApiClient>();
+      final results = await Future.wait([
+        api.get('/api/v1/menu/foods'),
+        api.get('/api/v1/banners'),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _foods = results[0]['foods'] as List? ?? [];
+        _banners = results[1]['banners'] as List? ?? [];
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Unable to load menu: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _addFood(Map<String, dynamic> food) {
+    final id = '${food['id'] ?? ''}';
+    if (id.isEmpty || food['available'] != true) return;
+
+    setState(() {
+      if (_cart.containsKey(id)) {
+        _cart[id]!['quantity'] = (_cart[id]!['quantity'] as int) + 1;
+      } else {
+        _cart[id] = {'food': food, 'quantity': 1};
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${food['name'] ?? food['name_en']} added to cart'),
+        duration: const Duration(milliseconds: 900),
+      ),
+    );
+  }
+
+  void _changeQuantity(String id, int delta, StateSetter updateSheet) {
+    final item = _cart[id];
+    if (item == null) return;
+
+    final next = (item['quantity'] as int) + delta;
+    if (next <= 0) {
+      _cart.remove(id);
+    } else {
+      item['quantity'] = next;
+    }
+
+    setState(() {});
+    updateSheet(() {});
+  }
+
+  Future<void> _openCart() async {
+    if (_cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your cart is empty. Add food first.')),
+      );
+      return;
+    }
+
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final addressController = TextEditingController();
+    final instructionsController = TextEditingController();
+
+    String paymentMethod = 'cod';
+    bool submitting = false;
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (context, updateSheet) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Your Cart',
+                                style: Theme.of(context).textTheme.headlineSmall,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        ..._cart.entries.map((entry) {
+                          final id = entry.key;
+                          final food = entry.value['food'] as Map<String, dynamic>;
+                          final qty = entry.value['quantity'] as int;
+                          final price =
+                              double.tryParse('${food['base_price']}') ?? 0;
+
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text('${food['name'] ?? food['name_en']}'),
+                            subtitle: Text(
+                              'NPR ${(price * qty).toStringAsFixed(2)}',
+                            ),
+                            leading: IconButton(
+                              onPressed: () =>
+                                  _changeQuantity(id, -1, updateSheet),
+                              icon: const Icon(Icons.remove_circle_outline),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('$qty'),
+                                IconButton(
+                                  onPressed: () =>
+                                      _changeQuantity(id, 1, updateSheet),
+                                  icon: const Icon(Icons.add_circle_outline),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        const Divider(),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Items subtotal: NPR ${_subtotal.toStringAsFixed(2)}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Delivery details',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: nameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Full name',
+                            border: OutlineInputBorder(),
+                          ),
+                          textCapitalization: TextCapitalization.words,
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Enter your name'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Phone number',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Enter your phone number'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: addressController,
+                          maxLines: 2,
+                          decoration: const InputDecoration(
+                            labelText: 'Full delivery address',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Enter your delivery address'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: instructionsController,
+                          decoration: const InputDecoration(
+                            labelText: 'Landmark / delivery instructions (optional)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Payment method',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        RadioListTile<String>(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Cash on Delivery (COD)'),
+                          value: 'cod',
+                          groupValue: paymentMethod,
+                          onChanged: submitting
+                              ? null
+                              : (v) => updateSheet(
+                                    () => paymentMethod = v!,
+                                  ),
+                        ),
+                        RadioListTile<String>(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('QR Payment'),
+                          subtitle: const Text(
+                            'Payment remains pending until hotel staff verifies it.',
+                          ),
+                          value: 'qr',
+                          groupValue: paymentMethod,
+                          onChanged: submitting
+                              ? null
+                              : (v) => updateSheet(
+                                    () => paymentMethod = v!,
+                                  ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: submitting || _cart.isEmpty
+                                ? null
+                                : () async {
+                                    if (!formKey.currentState!.validate()) {
+                                      return;
+                                    }
+
+                                    updateSheet(() => submitting = true);
+
+                                    try {
+                                      final items = _cart.entries.map((entry) {
+                                        return <String, dynamic>{
+                                          'food_id': entry.key,
+                                          'quantity': entry.value['quantity'],
+                                          'customizations': <dynamic>[],
+                                        };
+                                      }).toList();
+
+                                      final response = await context
+                                          .read<ApiClient>()
+                                          .post(
+                                        '/api/v1/orders',
+                                        idempotencyKey:
+                                            DateTime.now()
+                                                .microsecondsSinceEpoch
+                                                .toString(),
+                                        body: {
+                                          'items': items,
+                                          'payment_method': paymentMethod,
+                                          'address': {
+                                            'full_address':
+                                                addressController.text.trim(),
+                                            'latitude': null,
+                                            'longitude': null,
+                                            'landmark':
+                                                instructionsController.text.trim(),
+                                          },
+                                          'guest_name':
+                                              nameController.text.trim(),
+                                          'guest_phone':
+                                              phoneController.text.trim(),
+                                          'is_guest': true,
+                                          'delivery_instructions':
+                                              instructionsController.text.trim(),
+                                        },
+                                      );
+
+                                      final order = response['order'];
+                                      if (response['success'] != true ||
+                                          order is! Map) {
+                                        throw Exception(
+                                          response['message'] ??
+                                              'Order could not be confirmed.',
+                                        );
+                                      }
+
+                                      final orderNumber =
+                                          '${order['order_number'] ?? 'Received'}';
+                                      final trackingToken =
+                                          '${response['tracking_token'] ?? ''}';
+
+                                      if (!sheetContext.mounted) return;
+                                      Navigator.pop(sheetContext);
+
+                                      if (!mounted) return;
+                                      setState(() => _cart.clear());
+
+                                      await showDialog<void>(
+                                        context: this.context,
+                                        barrierDismissible: false,
+                                        builder: (dialogContext) => AlertDialog(
+                                          icon: const Icon(
+                                            Icons.check_circle,
+                                            color: MegaTheme.forestGreen,
+                                            size: 48,
+                                          ),
+                                          title: const Text('Order received'),
+                                          content: SelectableText(
+                                            'Order: $orderNumber\n'
+                                            'Payment: ${paymentMethod.toUpperCase()}\n'
+                                            '${trackingToken.isNotEmpty ? 'Tracking token: $trackingToken\n' : ''}'
+                                            '${paymentMethod == 'qr' ? 'QR payment is pending staff verification.' : 'Please pay cash when your order arrives.'}',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(dialogContext),
+                                              child: const Text('Done'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      if (sheetContext.mounted) {
+                                        updateSheet(() => submitting = false);
+                                        ScaffoldMessenger.of(sheetContext)
+                                          ..hideCurrentSnackBar()
+                                          ..showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Order failed: $e',
+                                              ),
+                                            ),
+                                          );
+                                      }
+                                    }
+                                  },
+                            icon: submitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.shopping_bag_outlined),
+                            label: Text(
+                              submitting ? 'Submitting…' : 'Place order',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      nameController.dispose();
+      phoneController.dispose();
+      addressController.dispose();
+      instructionsController.dispose();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthState>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Mega Hotel'),
+        actions: [
+          IconButton(
+            tooltip: 'Cart ($_cartCount items)',
+            icon: Badge(
+              isLabelVisible: _cartCount > 0,
+              label: Text('$_cartCount'),
+              child: const Icon(Icons.shopping_cart_outlined),
+            ),
+            onPressed: _openCart,
+          ),
+          if (auth.isAuthenticated)
+            IconButton(
+              icon: const Icon(Icons.person_outline),
+              onPressed: () {},
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _load,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    children: [
+                      if (_banners.isNotEmpty)
+                        SizedBox(
+                          height: 160,
+                          child: PageView.builder(
+                            itemCount: _banners.length,
+                            itemBuilder: (_, i) {
+                              final b = _banners[i];
+                              return Container(
+                                margin: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: MegaTheme.creamDark,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${b['title'] ?? 'Promo'}',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Menu',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                      ),
+                      if (_foods.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Center(
+                            child: Text('No items available yet.'),
+                          ),
+                        )
+                      else
+                        ..._foods.map((item) {
+                          final food = Map<String, dynamic>.from(item as Map);
+                          final id = '${food['id'] ?? ''}';
+                          final qty = _cart[id]?['quantity'] ?? 0;
+                          return Card(
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              title: Text(
+                                '${food['name'] ?? food['name_en'] ?? ''}',
+                              ),
+                              subtitle: Text(
+                                'NPR ${food['base_price'] ?? '0.00'}'
+                                '${qty > 0 ? ' • In cart: $qty' : ''}',
+                                style: const TextStyle(
+                                  color: MegaTheme.forestGreen,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              trailing: food['available'] == true
+                                  ? Icon(
+                                      qty > 0
+                                          ? Icons.add_shopping_cart
+                                          : Icons.add_circle,
+                                      color: MegaTheme.forestGreen,
+                                    )
+                                  : const Text(
+                                      'Out of stock',
+                                      style: TextStyle(
+                                        color: MegaTheme.error,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                              onTap: food['available'] == true
+                                  ? () => _addFood(food)
+                                  : null,
+                            ),
+                          );
+                        }),
+                      const SizedBox(height: 24),
+                      Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            final uri =
+                                Uri.parse('https://bamstudio.argan.com.np/');
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+                          },
+                          child: const Text(
+                            'Technology by BAM Studio',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: MegaTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+    );
+  }
+}
