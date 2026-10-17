@@ -1,7 +1,10 @@
+﻿import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import '../../theme/mega_theme.dart';
+import '../../core/auth_state.dart';
+import '../../core/api_client.dart';
 
-/// Developer splash — "Engineered by BAM Studio"
+/// Developer splash â€” "Engineered by BAM Studio"
 /// Displays for exactly 5 seconds, then navigates to login.
 /// Separate from Mega Hotel branding.
 class DeveloperSplash extends StatefulWidget {
@@ -26,9 +29,26 @@ class _DeveloperSplashState extends State<DeveloperSplash>
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/login');
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+
+      try {
+        final auth = context.read<AuthState>();
+        await auth.init();
+
+        if (!mounted) return;
+
+        context.read<ApiClient>().setToken(auth.accessToken);
+
+        final destination = auth.isAuthenticated
+            ? auth.homeRouteForRole()
+            : '/login';
+
+        Navigator.of(context).pushReplacementNamed(destination);
+      } catch (_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacementNamed('/login');
+        }
       }
     });
   }
@@ -74,3 +94,4 @@ class _DeveloperSplashState extends State<DeveloperSplash>
     );
   }
 }
+

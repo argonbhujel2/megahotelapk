@@ -23,6 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, Map<String, dynamic>> _cart = {};
   bool _loading = true;
   String? _error;
+  List<dynamic> _myOrders = [];
+  bool _ordersLoading = false;
+  String? _ordersError;
 
   int get _cartCount => _cart.values.fold(
         0,
@@ -72,6 +75,197 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadMyOrders() async {
+    final auth = context.read<AuthState>();
+    if (!auth.isAuthenticated || auth.role != 'customer') return;
+
+    setState(() {
+      _ordersLoading = true;
+      _ordersError = null;
+    });
+
+    try {
+      final response =
+          await context.read<ApiClient>().get('/api/v1/orders/mine');
+      final orders = response['orders'];
+      if (!mounted) return;
+      setState(() {
+        _myOrders = orders is List ? orders : [];
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _ordersError = 'Unable to load orders: $e');
+    } finally {
+      if (mounted) setState(() => _ordersLoading = false);
+    }
+  }
+
+  void _showOrderDetails(Map<String, dynamic> order) {
+    final items = order['items'] is List
+        ? order['items'] as List
+        : const [];
+    final address = order['address'] is Map
+        ? Map<String, dynamic>.from(order['address'] as Map)
+        : <String, dynamic>{};
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Order ${order['order_number'] ?? ''}'),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Status: ${order['status'] ?? 'Unknown'}'),
+                Text('Payment: ${order['payment_method'] ?? 'N/A'}'),
+                Text('Payment status: ${order['payment_status'] ?? 'N/A'}'),
+                const Divider(),
+                const Text(
+                  'Items',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                ...items.map((raw) {
+                  final item = Map<String, dynamic>.from(raw as Map);
+                  final name = item['food_name_en'] ??
+                      item['name'] ??
+                      item['food_name_ne'] ??
+                      'Food item';
+                  final quantity = item['quantity'] ?? 1;
+                  final price = item['line_total'] ?? '';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text('$name × $quantity  $price'),
+                  );
+                }),
+                const Divider(),
+                Text('Total: ${order['total'] ?? 'N/A'}'),
+                const SizedBox(height: 12),
+                const Text(
+                  'Delivery address',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${address['full_address'] ?? 'No address available'}',
+                ),
+                if ('${address['landmark'] ?? ''}'.trim().isNotEmpty)
+                  Text('Landmark: ${address['landmark']}'),
+                if (address['latitude'] != null &&
+                    address['longitude'] != null)
+                  Text(
+                    'Location: ${address['latitude']}, '
+                    '${address['longitude']}',
+                  ),
+                if ('${order['delivery_instructions'] ?? ''}'
+                    .trim()
+                    .isNotEmpty)
+                  Text('Instructions: ${order['delivery_instructions']}'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _myOrdersPage(AuthState auth) {
+    if (!auth.isAuthenticated || auth.role != 'customer') {
+      return _simplePage(
+        icon: Icons.receipt_long_outlined,
+        title: 'My Orders',
+        message: 'Sign in with your customer account to view your orders. '
+            'Guest orders remain available through their tracking token.',
+        actionLabel: 'Sign in',
+        onAction: () => Navigator.pushNamed(context, '/login'),
+      );
+    }
+
+    if (_ordersLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_ordersError != null) {
+      return _simplePage(
+        icon: Icons.wifi_off,
+        title: 'Could not load orders',
+        message: _ordersError!,
+        actionLabel: 'Try again',
+        onAction: _loadMyOrders,
+      );
+    }
+
+    if (_myOrders.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadMyOrders,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 120),
+            Icon(Icons.receipt_long_outlined, size: 56),
+            SizedBox(height: 16),
+            Center(
+              child: Text(
+                'No orders yet',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+            ),
+            SizedBox(height: 8),
+            Center(child: Text('Your customer orders will appear here.')),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadMyOrders,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'My Orders',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          ..._myOrders.map((raw) {
+            final order = Map<String, dynamic>.from(raw as Map);
+            final number = '${order['order_number'] ?? 'Order'}';
+            final status = '${order['status'] ?? 'Unknown'}';
+            final total = '${order['total'] ?? 'N/A'}';
+            final itemCount = order['items'] is List
+                ? (order['items'] as List).length
+                : 0;
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.receipt_long_outlined),
+                ),
+                title: Text(number),
+                subtitle: Text(
+                  '$status • $itemCount item(s)\nTap to view details',
+                ),
+                isThreeLine: true,
+                trailing: Text(
+                  total,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onTap: () => _showOrderDetails(order),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
   void _addFood(Map<String, dynamic> food) {
     final id = '${food['id'] ?? ''}';
     if (id.isEmpty || food['available'] != true) return;
@@ -292,6 +486,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                     updateSheet(() => submitting = true);
 
                                     try {
+                                      final auth = context.read<AuthState>();
+                                      final isCustomer =
+                                          auth.isAuthenticated &&
+                                          auth.role == 'customer';
+
                                       final items = _cart.entries.map((entry) {
                                         return <String, dynamic>{
                                           'food_id': entry.key,
@@ -323,7 +522,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               nameController.text.trim(),
                                           'guest_phone':
                                               phoneController.text.trim(),
-                                          'is_guest': true,
+                                          'is_guest': !isCustomer,
                                           'delivery_instructions':
                                               instructionsController.text.trim(),
                                         },
@@ -515,12 +714,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 )
               : _selectedTab == 2
-                  ? _simplePage(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'My Orders',
-                      message:
-                          'Order history is not available yet. Keep your order tracking token after placing an order.',
-                    )
+                  ? _myOrdersPage(auth)
                   : _selectedTab == 3
                       ? _simplePage(
                           icon: Icons.person_outline,
@@ -952,6 +1146,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectedTab = index;
             if (index == 0) _selectedCategoryId = null;
           });
+          if (index == 2) {
+            _loadMyOrders();
+          }
         },
         destinations: const [
           NavigationDestination(

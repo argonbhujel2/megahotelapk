@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../theme/mega_theme.dart';
 import '../../core/api_client.dart';
 import '../../core/auth_state.dart';
+import 'admin_orders_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -58,6 +59,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 Text('Operations', style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.receipt_long),
+                    title: const Text('View All Orders'),
+                    subtitle: const Text('Open orders, customer details and delivery addresses'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminOrdersScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 _StatCard(label: 'New Orders', value: '${_counts?['new'] ?? 0}', color: MegaTheme.forestGreen),
                 _StatCard(label: 'Preparing', value: '${_counts?['preparing'] ?? 0}'),
                 _StatCard(label: 'Out for Delivery', value: '${_counts?['out_for_delivery'] ?? 0}'),

@@ -54,14 +54,39 @@ def update_delivery_slot(slot_id):
 def list_orders():
     if not require_admin():
         return jsonify({"success": False, "error": "forbidden"}), 403
+
     status = request.args.get("status")
     query = Order.query.order_by(Order.created_at.desc())
     if status:
         query = query.filter_by(status=status)
+
     orders = query.limit(100).all()
-    return jsonify({"success": True, "orders": [o.to_dict() for o in orders]})
+    result = []
 
+    # Cache customer lookups so multiple orders from one customer
+    # do not repeatedly query the same user.
+    users_by_id = {}
+    for order in orders:
+        item = order.to_dict(include_items=True)
+        customer = None
 
+        if order.user_id:
+            if order.user_id not in users_by_id:
+                users_by_id[order.user_id] = User.query.get(order.user_id)
+
+            user = users_by_id[order.user_id]
+            if user:
+                customer = {
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "email": user.email,
+                    "phone": user.phone,
+                }
+
+        item["customer"] = customer
+        result.append(item)
+
+    return jsonify({"success": True, "orders": result})
 @bp.route("/dashboard", methods=["GET"])
 @jwt_required()
 def dashboard():

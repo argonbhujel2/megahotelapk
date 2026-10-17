@@ -1,4 +1,4 @@
-"""Order creation, tracking, status transitions."""
+﻿"""Order creation, tracking, status transitions."""
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from decimal import Decimal, ROUND_HALF_UP
@@ -18,6 +18,32 @@ bp = Blueprint("orders", __name__)
 def money(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+
+@bp.route("/mine", methods=["GET"])
+@jwt_required()
+def my_orders():
+    """Return orders belonging only to the logged-in user."""
+    user_id = str(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"success": False, "error": "user_not_found"}), 404
+
+    if user.role != "customer":
+        return jsonify({"success": False, "error": "customer_only"}), 403
+
+    orders = (
+        Order.query
+        .filter_by(user_id=user_id)
+        .order_by(Order.created_at.desc())
+        .limit(100)
+        .all()
+    )
+
+    return jsonify({
+        "success": True,
+        "orders": [order.to_dict(include_items=True) for order in orders],
+    })
 
 @bp.route("", methods=["POST"])
 def create_order():
@@ -40,6 +66,28 @@ def create_order():
     guest_phone = (data.get("guest_phone") or "").strip()
     is_guest = data.get("is_guest", False)
     instructions = data.get("delivery_instructions")
+
+    # Link non-guest orders to a valid authenticated customer.
+    order_user_id = None
+    if not is_guest:
+        try:
+            claims = get_jwt()
+            candidate_id = str(get_jwt_identity())
+            candidate = User.query.get(candidate_id)
+            if claims.get("role") == "customer" and candidate:
+                order_user_id = candidate.id
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "authentication_required",
+                    "message": "Sign in as a customer or place a guest order.",
+                }), 401
+        except Exception:
+            return jsonify({
+                "success": False,
+                "error": "authentication_required",
+                "message": "Sign in as a customer or place a guest order.",
+            }), 401
     promo_code = data.get("promo_code")
 
     if payment_method not in ("cod", "qr"):
@@ -110,6 +158,7 @@ def create_order():
             order_number=Order.generate_order_number(),
             tracking_token=Order.generate_tracking_token(),
             is_guest=is_guest,
+            user_id=order_user_id,
             guest_name=guest_name if is_guest else None,
             guest_phone=guest_phone if is_guest else None,
             payment_method=payment_method,
@@ -194,7 +243,7 @@ def create_order():
 
 @bp.route("/track/<token>", methods=["GET"])
 def track_by_token(token):
-    """Secure guest tracking — only the unguessable token grants access."""
+    """Secure guest tracking â€” only the unguessable token grants access."""
     order = Order.query.filter_by(tracking_token=token).first()
     if not order:
         return jsonify({"success": False, "error": "not_found", "message": "Order not found"}), 404
@@ -205,7 +254,7 @@ def track_by_token(token):
         last_loc = order.assignment.location_updates.order_by(
             # assuming relationship ordered
         ).first() if hasattr(order.assignment, "location_updates") else None
-        # Simplified — real implementation would fetch latest LocationUpdate
+        # Simplified â€” real implementation would fetch latest LocationUpdate
         data["location"] = None  # never fabricate
         data["location_message"] = "Location updates appear when the delivery is active."
     return jsonify({"success": True, "order": data})
@@ -253,3 +302,4 @@ def update_status(order_id):
 
     db.session.commit()
     return jsonify({"success": True, "order": order.to_dict()})
+
