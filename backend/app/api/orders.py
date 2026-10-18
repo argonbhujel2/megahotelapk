@@ -46,6 +46,7 @@ def my_orders():
     })
 
 @bp.route("", methods=["POST"])
+@jwt_required(optional=True)
 def create_order():
     """
     Create order (authenticated or guest).

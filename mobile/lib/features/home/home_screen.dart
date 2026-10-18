@@ -101,9 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showOrderDetails(Map<String, dynamic> order) {
-    final items = order['items'] is List
-        ? order['items'] as List
-        : const [];
+    final items = order['items'] is List ? order['items'] as List : const [];
     final address = order['address'] is Map
         ? Map<String, dynamic>.from(order['address'] as Map)
         : <String, dynamic>{};
@@ -152,15 +150,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 if ('${address['landmark'] ?? ''}'.trim().isNotEmpty)
                   Text('Landmark: ${address['landmark']}'),
-                if (address['latitude'] != null &&
-                    address['longitude'] != null)
+                if (address['latitude'] != null && address['longitude'] != null)
                   Text(
                     'Location: ${address['latitude']}, '
                     '${address['longitude']}',
                   ),
-                if ('${order['delivery_instructions'] ?? ''}'
-                    .trim()
-                    .isNotEmpty)
+                if ('${order['delivery_instructions'] ?? ''}'.trim().isNotEmpty)
                   Text('Instructions: ${order['delivery_instructions']}'),
               ],
             ),
@@ -239,9 +234,8 @@ class _HomeScreenState extends State<HomeScreen> {
             final number = '${order['order_number'] ?? 'Order'}';
             final status = '${order['status'] ?? 'Unknown'}';
             final total = '${order['total'] ?? 'N/A'}';
-            final itemCount = order['items'] is List
-                ? (order['items'] as List).length
-                : 0;
+            final itemCount =
+                order['items'] is List ? (order['items'] as List).length : 0;
 
             return Card(
               margin: const EdgeInsets.only(bottom: 10),
@@ -266,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
   void _addFood(Map<String, dynamic> food) {
     final id = '${food['id'] ?? ''}';
     if (id.isEmpty || food['available'] != true) return;
@@ -345,7 +340,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             Expanded(
                               child: Text(
                                 'Your Cart',
-                                style: Theme.of(context).textTheme.headlineSmall,
+                                style:
+                                    Theme.of(context).textTheme.headlineSmall,
                               ),
                             ),
                             IconButton(
@@ -356,7 +352,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         ..._cart.entries.map((entry) {
                           final id = entry.key;
-                          final food = entry.value['food'] as Map<String, dynamic>;
+                          final food =
+                              entry.value['food'] as Map<String, dynamic>;
                           final qty = entry.value['quantity'] as int;
                           final price =
                               double.tryParse('${food['base_price']}') ?? 0;
@@ -438,7 +435,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         TextFormField(
                           controller: instructionsController,
                           decoration: const InputDecoration(
-                            labelText: 'Landmark / delivery instructions (optional)',
+                            labelText:
+                                'Landmark / delivery instructions (optional)',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -487,8 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                     try {
                                       final auth = context.read<AuthState>();
-                                      final isCustomer =
-                                          auth.isAuthenticated &&
+                                      final isCustomer = auth.isAuthenticated &&
                                           auth.role == 'customer';
 
                                       final items = _cart.entries.map((entry) {
@@ -499,14 +496,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                         };
                                       }).toList();
 
-                                      final response = await context
-                                          .read<ApiClient>()
-                                          .post(
+                                      final response =
+                                          await context.read<ApiClient>().post(
                                         '/api/v1/orders',
-                                        idempotencyKey:
-                                            DateTime.now()
-                                                .microsecondsSinceEpoch
-                                                .toString(),
+                                        idempotencyKey: DateTime.now()
+                                            .microsecondsSinceEpoch
+                                            .toString(),
                                         body: {
                                           'items': items,
                                           'payment_method': paymentMethod,
@@ -515,8 +510,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 addressController.text.trim(),
                                             'latitude': null,
                                             'longitude': null,
-                                            'landmark':
-                                                instructionsController.text.trim(),
+                                            'landmark': instructionsController
+                                                .text
+                                                .trim(),
                                           },
                                           'guest_name':
                                               nameController.text.trim(),
@@ -524,7 +520,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                               phoneController.text.trim(),
                                           'is_guest': !isCustomer,
                                           'delivery_instructions':
-                                              instructionsController.text.trim(),
+                                              instructionsController.text
+                                                  .trim(),
                                         },
                                       );
 
@@ -629,8 +626,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final name = '${food['name'] ?? food['name_en'] ?? ''}'.toLowerCase();
       final query = _searchQuery.trim().toLowerCase();
 
-      final categoryMatches = _selectedCategoryId == null ||
-          categoryId == _selectedCategoryId;
+      final categoryMatches =
+          _selectedCategoryId == null || categoryId == _selectedCategoryId;
       final searchMatches = query.isEmpty || name.contains(query);
 
       return categoryMatches && searchMatches;
@@ -713,17 +710,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : _selectedTab == 2
+              : _selectedTab == 3
                   ? _myOrdersPage(auth)
-                  : _selectedTab == 3
+                  : _selectedTab == 4
                       ? _simplePage(
                           icon: Icons.person_outline,
                           title: 'My Profile',
                           message: auth.isAuthenticated
                               ? 'You are signed in.'
                               : 'Sign in to access your account.',
-                          actionLabel:
-                              auth.isAuthenticated ? null : 'Sign in',
+                          actionLabel: auth.isAuthenticated ? null : 'Sign in',
                           onAction: auth.isAuthenticated
                               ? null
                               : () => Navigator.pushNamed(context, '/login'),
@@ -734,7 +730,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.only(bottom: 24),
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 18, 16, 12),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -764,12 +761,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
                               // Search
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: TextField(
                                   onChanged: (value) =>
                                       setState(() => _searchQuery = value),
                                   decoration: InputDecoration(
-                                    hintText: 'Search momo, chowmein, biryani...',
+                                    hintText:
+                                        'Search momo, chowmein, biryani...',
                                     prefixIcon: const Icon(Icons.search),
                                     filled: true,
                                     fillColor: MegaTheme.cream,
@@ -785,7 +784,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               // Promotional banner from the backend
                               if (_selectedTab == 0)
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
                                   child: Container(
                                     height: 155,
                                     decoration: BoxDecoration(
@@ -804,11 +804,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ? PageView.builder(
                                             itemCount: _banners.length,
                                             itemBuilder: (_, index) {
-                                              final banner = Map<String, dynamic>.from(
+                                              final banner =
+                                                  Map<String, dynamic>.from(
                                                 _banners[index] as Map,
                                               );
                                               final imageUrl =
-                                                  banner['image_url']?.toString();
+                                                  banner['image_url']
+                                                      ?.toString();
                                               return Stack(
                                                 fit: StackFit.expand,
                                                 children: [
@@ -817,34 +819,44 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     Image.network(
                                                       imageUrl,
                                                       fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) =>
-                                                          const SizedBox(),
+                                                      errorBuilder:
+                                                          (_, __, ___) =>
+                                                              const SizedBox(),
                                                     ),
                                                   Container(
-                                                    color: Colors.black.withValues(
+                                                    color:
+                                                        Colors.black.withValues(
                                                       alpha: 0.30,
                                                     ),
                                                   ),
                                                   Padding(
-                                                    padding: const EdgeInsets.all(20),
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                            20),
                                                     child: Column(
                                                       crossAxisAlignment:
-                                                          CrossAxisAlignment.start,
+                                                          CrossAxisAlignment
+                                                              .start,
                                                       mainAxisAlignment:
-                                                          MainAxisAlignment.center,
+                                                          MainAxisAlignment
+                                                              .center,
                                                       children: [
                                                         Text(
                                                           '${banner['title'] ?? 'Fresh & delicious'}',
-                                                          style: const TextStyle(
+                                                          style:
+                                                              const TextStyle(
                                                             color: Colors.white,
                                                             fontSize: 23,
-                                                            fontWeight: FontWeight.w800,
+                                                            fontWeight:
+                                                                FontWeight.w800,
                                                           ),
                                                         ),
-                                                        const SizedBox(height: 6),
+                                                        const SizedBox(
+                                                            height: 6),
                                                         Text(
                                                           '${banner['subtitle'] ?? 'Order your favourites today'}',
-                                                          style: const TextStyle(
+                                                          style:
+                                                              const TextStyle(
                                                             color: Colors.white,
                                                           ),
                                                         ),
@@ -889,7 +901,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                               // Category filters
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: Row(
                                   children: [
                                     Expanded(
@@ -917,7 +930,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 height: 48,
                                 child: ListView(
                                   scrollDirection: Axis.horizontal,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
                                   children: [
                                     Padding(
                                       padding: const EdgeInsets.only(right: 8),
@@ -931,12 +945,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     ..._categories.map((item) {
                                       final category =
-                                          Map<String, dynamic>.from(item as Map);
+                                          Map<String, dynamic>.from(
+                                              item as Map);
                                       final id = '${category['id'] ?? ''}';
                                       final selected =
                                           _selectedCategoryId == id;
                                       return Padding(
-                                        padding: const EdgeInsets.only(right: 8),
+                                        padding:
+                                            const EdgeInsets.only(right: 8),
                                         child: ChoiceChip(
                                           label: Text(
                                             '${category['name'] ?? category['name_en'] ?? 'Category'}',
@@ -955,7 +971,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(height: 18),
 
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: Text(
                                   _selectedCategoryId == null
                                       ? 'Popular menu'
@@ -972,12 +989,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const Padding(
                                   padding: EdgeInsets.all(32),
                                   child: Center(
-                                    child: Text('No matching food items found.'),
+                                    child:
+                                        Text('No matching food items found.'),
                                   ),
                                 )
                               else
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
                                   child: GridView.builder(
                                     shrinkWrap: true,
                                     physics:
@@ -991,13 +1010,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                       childAspectRatio: 0.64,
                                     ),
                                     itemBuilder: (context, index) {
-                                      final food =
-                                          Map<String, dynamic>.from(
+                                      final food = Map<String, dynamic>.from(
                                         visibleFoods[index] as Map,
                                       );
                                       final id = '${food['id'] ?? ''}';
-                                      final qty =
-                                          _cart[id]?['quantity'] ?? 0;
+                                      final qty = _cart[id]?['quantity'] ?? 0;
                                       final available =
                                           food['available'] == true;
 
@@ -1020,10 +1037,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 SizedBox(
                                                   width: double.infinity,
                                                   child: foodImage(
-                                                    food['image_url']?.toString(),
+                                                    food['image_url']
+                                                        ?.toString(),
                                                   ),
                                                 ),
-                                                if (food['is_vegetarian'] == true)
+                                                if (food['is_vegetarian'] ==
+                                                    true)
                                                   const Positioned(
                                                     top: 8,
                                                     left: 8,
@@ -1057,8 +1076,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     Text(
                                                       'NPR ${food['base_price'] ?? '0.00'}',
                                                       style: const TextStyle(
-                                                        color:
-                                                            MegaTheme.forestGreen,
+                                                        color: MegaTheme
+                                                            .forestGreen,
                                                         fontSize: 15,
                                                         fontWeight:
                                                             FontWeight.w800,
@@ -1068,13 +1087,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     SizedBox(
                                                       width: double.infinity,
                                                       height: 46,
-                                                      child: ElevatedButton.icon(
+                                                      child:
+                                                          ElevatedButton.icon(
                                                         onPressed: available
-                                                            ? () => _addFood(food)
+                                                            ? () =>
+                                                                _addFood(food)
                                                             : null,
                                                         icon: Icon(
                                                           qty > 0
-                                                              ? Icons.add_shopping_cart
+                                                              ? Icons
+                                                                  .add_shopping_cart
                                                               : Icons.add,
                                                           size: 20,
                                                         ),
@@ -1086,19 +1108,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                                                   : 'ADD TO CART',
                                                           maxLines: 1,
                                                           softWrap: false,
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: const TextStyle(
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              const TextStyle(
                                                             fontSize: 13,
-                                                            fontWeight: FontWeight.w800,
+                                                            fontWeight:
+                                                                FontWeight.w800,
                                                             letterSpacing: 0.2,
                                                           ),
                                                         ),
-                                                        style: ElevatedButton.styleFrom(
-                                                          minimumSize: const Size(0, 46),
-                                                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                          tapTargetSize: MaterialTapTargetSize.padded,
-                                                          shape: RoundedRectangleBorder(
-                                                            borderRadius: BorderRadius.circular(12),
+                                                        style: ElevatedButton
+                                                            .styleFrom(
+                                                          minimumSize:
+                                                              const Size(0, 46),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      8),
+                                                          tapTargetSize:
+                                                              MaterialTapTargetSize
+                                                                  .padded,
+                                                          shape:
+                                                              RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        12),
                                                           ),
                                                         ),
                                                       ),
@@ -1142,31 +1179,74 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTab,
         onDestinationSelected: (index) {
+          if (index == 2) {
+            _openCart();
+            return;
+          }
+
           setState(() {
             _selectedTab = index;
             if (index == 0) _selectedCategoryId = null;
           });
-          if (index == 2) {
+
+          if (index == 3) {
             _loadMyOrders();
           }
         },
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Home',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.grid_view_outlined),
             selectedIcon: Icon(Icons.grid_view),
             label: 'Categories',
           ),
           NavigationDestination(
+            icon: Badge(
+              isLabelVisible: _cartCount > 0,
+              label: Text('$_cartCount'),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: MegaTheme.forestGreen,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shopping_cart,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: _cartCount > 0,
+              label: Text('$_cartCount'),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: MegaTheme.forestGreen,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shopping_cart,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+            ),
+            label: 'Cart',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: 'My Orders',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Profile',
@@ -1213,4 +1293,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
